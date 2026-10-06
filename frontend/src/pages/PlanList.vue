@@ -11,6 +11,7 @@ import {
   NCard,
   NDataTable,
   NDatePicker,
+  NAlert,
   NForm,
   NFormItem,
   NGrid,
@@ -34,6 +35,7 @@ import { useCheckStore } from '../stores/checkStore';
 import { usePlanProgress } from '../hooks/usePlanProgress';
 import { MAINT_CYCLE_LABEL, type MaintCycle } from '../types/elevator';
 import { PLAN_STATE_LABEL, type PlanState, type PlanView } from '../types/plan';
+import { reschedulePlanDates, type PlanRescheduleUpdate } from '../utils/reschedule';
 import { formatMinutes } from '../utils/duration';
 import StateTag from '../components/common/StateTag.vue';
 import StatBadge from '../components/common/StatBadge.vue';
@@ -138,6 +140,10 @@ const editModel = ref<{ elevatorId: string; cycleType: MaintCycle; planDateTs: n
 });
 
 function openEdit(row: PlanView): void {
+  if (row.state === 'signed') {
+    message.warning('已签署计划不能编辑');
+    return;
+  }
   editingId.value = row.id;
   editModel.value = {
     elevatorId: row.elevatorId,
@@ -162,6 +168,53 @@ async function submitEdit(): Promise<void> {
   });
   message.success('计划已更新');
   editOpen.value = false;
+}
+
+/* ------------------------------ 改期与顺延 ------------------------------ */
+const rescheduleOpen = ref(false);
+const rescheduleTarget = ref<PlanView | null>(null);
+const rescheduleDateTs = ref(Date.now());
+
+function openReschedule(row: PlanView): void {
+  if (row.state === 'signed') {
+    message.warning('已签署计划不能改期');
+    return;
+  }
+  rescheduleTarget.value = row;
+  rescheduleDateTs.value = new Date(`${row.planDate}T00:00:00`).getTime();
+  rescheduleOpen.value = true;
+}
+
+const reschedulePreview = computed(() => {
+  const target = rescheduleTarget.value;
+  if (!target) return null;
+  return reschedulePlanDates(
+    planStore.plans,
+    target.id,
+    tsToDate(rescheduleDateTs.value),
+  );
+});
+
+const rescheduleRows = computed<PlanRescheduleUpdate[]>(
+  () => (reschedulePreview.value?.ok ? reschedulePreview.value.updates : []),
+);
+
+const rescheduleChangedRows = computed(() =>
+  rescheduleRows.value.filter((item) => item.fromDate !== item.toDate),
+);
+
+async function submitReschedule(): Promise<void> {
+  if (!rescheduleTarget.value || !reschedulePreview.value?.ok) return;
+  const result = await planStore.reschedulePlan(
+    rescheduleTarget.value.id,
+    tsToDate(rescheduleDateTs.value),
+  );
+  if (result.ok) {
+    message.success(result.message);
+    rescheduleOpen.value = false;
+  } else {
+    message.warning(result.message);
+  }
 }
 
 /* ------------------------------ 指派执行人 ------------------------------ */
@@ -238,7 +291,7 @@ const columns = computed<DataTableColumns<PlanView>>(() => [
   {
     title: '操作',
     key: 'actions',
-    width: 260,
+    width: 310,
     fixed: 'right',
     render: (row) =>
       h(NSpace, { size: 2 }, {
@@ -249,7 +302,26 @@ const columns = computed<DataTableColumns<PlanView>>(() => [
             { default: () => '执行' },
           ),
           h(NButton, { size: 'tiny', text: true, onClick: () => openAssign(row) }, { default: () => '指派' }),
-          h(NButton, { size: 'tiny', text: true, onClick: () => openEdit(row) }, { default: () => '编辑' }),
+          h(
+            NButton,
+            {
+              size: 'tiny',
+              text: true,
+              disabled: row.state === 'signed',
+              onClick: () => openReschedule(row),
+            },
+            { default: () => '改期' },
+          ),
+          h(
+            NButton,
+            {
+              size: 'tiny',
+              text: true,
+              disabled: row.state === 'signed',
+              onClick: () => openEdit(row),
+            },
+            { default: () => '编辑' },
+          ),
           h(
             NButton,
             {
@@ -295,7 +367,7 @@ const avgRescueHint = computed(() => {
       <div>
         <h2 class="page-title">保养计划</h2>
         <div class="page-sub">
-          按半月 / 季度 / 年度批量生成计划并指派执行人；逾期未签署自动标红，签署需全部保养项已填写结果。
+          未签署计划可改期并自动顺延后续未签署期次；逾期未签署自动标红，签署需全部保养项已填写结果。
         </div>
       </div>
       <n-space>
@@ -388,7 +460,7 @@ const avgRescueHint = computed(() => {
         :data="filtered"
         :bordered="false"
         size="small"
-        :scroll-x="1380"
+        :scroll-x="1430"
         :pagination="{ pageSize: 10 }"
         :row-class-name="(row: PlanView) => (row.overdue ? 'row-marked' : '')"
       />
@@ -490,6 +562,51 @@ const avgRescueHint = computed(() => {
         <n-space justify="end">
           <n-button @click="editOpen = false">取消</n-button>
           <n-button type="primary" @click="submitEdit">保存</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- 改期与顺延 -->
+    <n-modal v-model:show="rescheduleOpen" preset="card" title="保养计划改期" style="max-width: 560px">
+      <n-space vertical :size="12">
+        <n-alert type="info" :bordered="false">
+          已签署期次保留原日期；本期之后同电梯、同周期且未签署的期次会按
+          {{ rescheduleTarget ? MAINT_CYCLE_LABEL[rescheduleTarget.cycleType] : '' }}周期顺延。
+        </n-alert>
+        <n-form label-placement="top">
+          <n-form-item label="改期期次">
+            <n-text>{{ rescheduleTarget?.elevatorName }} · {{ rescheduleTarget?.planDate }}</n-text>
+          </n-form-item>
+          <n-form-item label="新计划日期">
+            <n-date-picker v-model:value="rescheduleDateTs" type="date" :clearable="false" style="width: 100%" />
+          </n-form-item>
+        </n-form>
+        <n-alert v-if="reschedulePreview && !reschedulePreview.ok" type="error" :bordered="false">
+          {{ reschedulePreview.message }}
+        </n-alert>
+        <div v-else>
+          <n-text depth="3" style="font-size: 12px">
+            顺延只使用本期的 {{ rescheduleTarget ? MAINT_CYCLE_LABEL[rescheduleTarget.cycleType] : '' }}周期；
+            若顺延后的日期早于今天，仍会按逾期提示。
+          </n-text>
+          <div class="reschedule-preview">
+            <div v-for="(item, index) in rescheduleRows" :key="item.planId" class="reschedule-row">
+              <span>{{ item.target ? '本期' : `后续第 ${index} 期` }}</span>
+              <span>{{ item.fromDate }} → <strong>{{ item.toDate }}</strong></span>
+            </div>
+          </div>
+        </div>
+      </n-space>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="rescheduleOpen = false">取消</n-button>
+          <n-button
+            type="primary"
+            :disabled="!reschedulePreview?.ok || rescheduleChangedRows.length === 0"
+            @click="submitReschedule"
+          >
+            确认改期
+          </n-button>
         </n-space>
       </template>
     </n-modal>

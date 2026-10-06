@@ -136,3 +136,28 @@ body::before {
 .row-marked {
   background: #fffbe6;
 }
+
+.reschedule-preview {
+  margin-top: 10px;
+  border: 1px solid var(--gb-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.reschedule-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  background: var(--gb-surface);
+}
+
+.reschedule-row + .reschedule-row {
+  border-top: 1px solid var(--gb-line);
+}
+
+.reschedule-row span:first-child {
+  color: rgba(16, 38, 31, 0.58);
+  white-space: nowrap;
+}

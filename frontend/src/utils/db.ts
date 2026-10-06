@@ -14,6 +14,7 @@ import type { Rescue } from '../types/rescue';
 import type { Rectify } from '../types/rectify';
 import { ROW_REVISION, type Revisioned } from '../types/persistence';
 import { addDays, generatePlanDates, nextPlanDate } from './cycle';
+import type { PlanRescheduleUpdate } from './reschedule';
 import { nowDateTime, rescueMinutes, todayDate } from './duration';
 
 /** 浏览器 IndexedDB 库名 */
@@ -398,6 +399,23 @@ export async function putPlan(row: PlanRow): Promise<void> {
 
 export async function putPlans(rows: PlanRow[]): Promise<void> {
   await db.plans.bulkPut(rows);
+}
+
+/** 原子应用改期结果；已签署计划保持不变 */
+export async function applyPlanReschedule(updates: PlanRescheduleUpdate[]): Promise<void> {
+  if (updates.length === 0) return;
+  await db.transaction('rw', [db.plans], async () => {
+    const rows = await db.plans
+      .where('id')
+      .anyOf(updates.map((item) => item.planId))
+      .toArray();
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    for (const update of updates) {
+      const row = byId.get(update.planId);
+      if (!row || row.state === 'signed') continue;
+      await db.plans.put({ ...row, planDate: update.toDate });
+    }
+  });
 }
 
 /** 删除计划并级联删除保养项 */

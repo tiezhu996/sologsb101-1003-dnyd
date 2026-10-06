@@ -24,7 +24,7 @@ docker compose up -d --build # 代码改动后重建
 核心动作：
 
 - 建立电梯与使用单位档案，按周期推算下次保养日期并给出提醒窗口
-- 按周期批量生成保养计划、指派执行人、跟踪逾期
+- 按周期批量生成保养计划、指派执行人、跟踪逾期；未签署期次可改期，并按本期周期顺延后续未签署期次、保留已签署日期
 - 逐项填写实测值与结果（正常 / 异常 / 建议）并签署，签署时校验未填项
 - 异常项一键转年检整改单，复核通过后关闭
 - 录入困人救援的报警 / 到场 / 救出时间，自动计算到场与救援时长并按 30 分钟到场要求判定
@@ -50,7 +50,7 @@ docker compose up -d --build # 代码改动后重建
 | 路由 | 页面 | 说明 |
 | --- | --- | --- |
 | `/elevators` | 电梯档案 | 建立电梯与使用单位档案，按单位与周期筛选 |
-| `/plans` | 保养计划 | 按周期批量生成、指派执行人、查看逾期 |
+| `/plans` | 保养计划 | 按周期批量生成、指派执行人、未签署改期顺延、查看逾期 |
 | `/plans/:id/items` | 保养执行 | 逐项填写实测值与结果并签署，异常转整改 |
 | `/rescues` | 困人救援时间线 | 录入报警 / 到场 / 救出时间并自动算时长 |
 | `/rectifies` | 年检整改与预警 | 整改单跟踪、超期预警与版本 / JSON 管理 |
@@ -84,7 +84,7 @@ sologsb101-1003/
         ├── hooks/               # usePlanProgress.ts useIdbTable.ts
         ├── pages/               # ElevatorList.vue PlanList.vue PlanExecute.vue RescueTimeline.vue RectifyList.vue
         ├── router/index.ts
-        └── utils/               # duration.ts cycle.ts db.ts export.ts events.ts
+        └── utils/               # duration.ts cycle.ts db.ts reschedule.ts export.ts events.ts
 ```
 
 ## 六、数据存储说明

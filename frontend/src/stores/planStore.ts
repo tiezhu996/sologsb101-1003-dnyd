@@ -9,6 +9,7 @@ import {
   listCheckItems,
   listElevators,
   listPlans,
+  applyPlanReschedule,
   planDatesFrom,
   putPlan,
   putPlans,
@@ -22,6 +23,7 @@ import { itemsForCycle } from '../types/checkItem';
 import { isPlanOverdue, planProgress, type PlanDraft, type PlanState, type PlanView } from '../types/plan';
 import type { MaintCycle } from '../types/elevator';
 import { nowDateTime, todayDate } from '../utils/duration';
+import { reschedulePlanDates } from '../utils/reschedule';
 import { uuid } from '../utils/export';
 import { emitChange, onChange } from '../utils/events';
 
@@ -178,6 +180,18 @@ export const usePlanStore = defineStore('plan', () => {
     emitChange();
   }
 
+  /** 改期当前未签署期次，并顺延同电梯、同周期后续未签署期次 */
+  async function reschedulePlan(
+    id: string,
+    newPlanDate: string,
+  ): Promise<{ ok: boolean; message: string; followingCount: number }> {
+    const result = reschedulePlanDates(plans.value, id, newPlanDate);
+    if (!result.ok) return { ok: false, message: result.message, followingCount: 0 };
+    await applyPlanReschedule(result.updates);
+    emitChange();
+    return { ok: true, message: result.message, followingCount: result.followingCount };
+  }
+
   /** 指派执行人 */
   async function assignExecutor(id: string, executor: string): Promise<void> {
     const existing = plans.value.find((item) => item.id === id);
@@ -287,6 +301,7 @@ export const usePlanStore = defineStore('plan', () => {
     createPlan,
     batchGenerate,
     updatePlan,
+    reschedulePlan,
     assignExecutor,
     updateState,
     signPlan,
