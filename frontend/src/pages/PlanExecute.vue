@@ -181,7 +181,8 @@ const elevatorRemind = computed(() => {
   if (!plan.value) return '';
   const elevator = elevatorStore.elevators.find((item) => item.id === plan.value?.elevatorId);
   if (!elevator) return '';
-  return `下次保养建议日期 ${nextPlanDate(plan.value.planDate, elevator.maintCycle)}（${MAINT_CYCLE_LABEL[elevator.maintCycle]}周期）`;
+  // 下一期按「本期自己的周期」推算，不采用电梯档案上可能改过的周期
+  return `下次保养建议日期 ${nextPlanDate(plan.value.planDate, plan.value.cycleType)}（${MAINT_CYCLE_LABEL[plan.value.cycleType]}周期）`;
 });
 
 const columns = computed<DataTableColumns<CheckItemView>>(() => [

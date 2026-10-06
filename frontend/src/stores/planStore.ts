@@ -22,6 +22,7 @@ import { itemsForCycle } from '../types/checkItem';
 import { isPlanOverdue, planProgress, type PlanDraft, type PlanState, type PlanView } from '../types/plan';
 import type { MaintCycle } from '../types/elevator';
 import { nowDateTime, todayDate } from '../utils/duration';
+import { planReschedule } from '../utils/reschedule';
 import { uuid } from '../utils/export';
 import { emitChange, onChange } from '../utils/events';
 
@@ -186,6 +187,36 @@ export const usePlanStore = defineStore('plan', () => {
     emitChange();
   }
 
+  /**
+   * 计划改期：把某期未签署计划改到能做的日子，该电梯同周期后续未签署期次跟着顺延。
+   * 顺延按各期自己的周期（plan.cycleType）从改后日期逐期后推，不读电梯档案周期；
+   * 已签署期次照原样保留且不可被越过。改期不改状态，新日期过了今天仍按逾期提示。
+   */
+  async function reschedulePlan(
+    id: string,
+    newDate: string,
+  ): Promise<{ ok: boolean; message: string; shiftedCount: number }> {
+    const result = planReschedule(plans.value, id, newDate);
+    if (!result.ok) return { ok: false, message: result.message, shiftedCount: 0 };
+    if (result.changes.length === 0) {
+      return { ok: true, message: result.message, shiftedCount: 0 };
+    }
+    const byId = new Map(plans.value.map((item) => [item.id, item]));
+    const rows = result.changes.map((change) => {
+      const existing = byId.get(change.planId);
+      if (!existing) throw new Error('待顺延的计划不存在');
+      return { ...existing, planDate: change.newDate };
+    });
+    await putPlans(rows);
+    emitChange();
+    return { ok: true, message: result.message, shiftedCount: result.shiftedCount };
+  }
+
+  /** 改期预案（不落库）：供改期弹窗预览会动到哪些期次 */
+  function previewReschedule(id: string, newDate: string) {
+    return planReschedule(plans.value, id, newDate);
+  }
+
   /** 状态流转：待执行 → 执行中 → 已签署 */
   async function updateState(id: string, state: PlanState): Promise<void> {
     const existing = plans.value.find((item) => item.id === id);
@@ -288,6 +319,8 @@ export const usePlanStore = defineStore('plan', () => {
     batchGenerate,
     updatePlan,
     assignExecutor,
+    reschedulePlan,
+    previewReschedule,
     updateState,
     signPlan,
     deletePlan,
